@@ -13,10 +13,13 @@ import { useEffect } from 'react'
 import moment from 'moment'
 import SelectLabel from '../components/SelectLabel'
 import Chart from 'react-apexcharts'
+import { label } from '../services/labels'
 
 export default function Home() {
+  const [loading, setLoading] = useState(false)
 
   const [labels, setLabels] = useState({
+    id: 0,
     label1: '',
     label2: '',
     label3: ''
@@ -28,38 +31,26 @@ export default function Home() {
   })
 
   const [series, setSeries] = useState([{
-    data: [{
-      id: 0,
-      x: new Date(1538778600000),
-      y: [6629.81, 6650.5, 6623.04, 6633.33]
-    },
-    {
-      id: 1,
-      x: new Date(1538780400000),
-      y: [6632.01, 6643.59, 6620, 6630.11]
-    },
-    {
-      id: 2,
-      x: new Date(1538782200000),
-      y: [6630.71, 6648.95, 6623.34, 6635.65]
-    }]
+    data: []
   }])
-
 
   const options = {
     chart: {
       type: 'candlestick',
-      height: 350,
+      height: 450,
       events: {
         dataPointSelection: (event, chartContext, config) => { 
-          // console.log(event)
-          // console.log(chartContext)
-          console.log(series[0].data[config.dataPointIndex])
+          // console.log(config)
+          console.log(config.w.config.series[0].data[config.dataPointIndex])
+          // console.log(series[0].data[config.dataPointIndex])
+          const { id, x, y } = config.w.config.series[0].data[config.dataPointIndex]
+          labels.id = id
+          setLabels({...labels})
         }
       }
     },
     title: {
-      text: 'CandleStick Chart',
+      text: 'BTC/USD Price Chart',
       align: 'left'
     },
     xaxis: {
@@ -68,6 +59,16 @@ export default function Home() {
     yaxis: {
       tooltip: {
         enabled: true
+      }
+    },
+    noData: {
+      text: 'no data'
+    },
+    plotOptions: {
+      candlestick: {
+        wick: {
+          useFillColor: true,
+        }
       }
     }
   }
@@ -79,26 +80,37 @@ export default function Home() {
 
   const search = async () => {
     try {
+      setLoading(true)
+      const prices = (await getPrices(SQLDateTimeFormatter(query.startDate),SQLDateTimeFormatter(query.endDate),'15m')).data
       // const prices = (await getPrices('1900-01-20T01:00:00','1900-01-20T23:59:00','15m')).data
       // console.log(prices)
+      const dat = []
+      for (let i = 0;i < prices.length;i++) {
+        const {t_id, t_date, t_open, t_high, t_low, t_close} = prices[i]
+        dat.push({
+          id: t_id,
+          x: new Date(t_date),
+          y: [t_open, t_high, t_low, t_close] // [{ x: date, y: [O,H,L,C] }]
+        })
+      }
       setSeries([{
-        data: [{
-            id: 0,
-            x: new Date(1538778600000),
-            y: [Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10)]
-          },
-          {
-            id: 1,
-            x: new Date(1538780400000),
-            y: [Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10)]
-          },
-          {
-            id: 2,
-            x: new Date(1538782200000),
-            y: [Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10), Math.floor(Math.random() * 10)]
-          }
-        ]
+        data: dat
       }])
+    } catch (error) {
+      console.log(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const clear = async () => {
+    try {
+      setLabels({
+        id: 0,
+        label1: '',
+        label2: '',
+        label3: ''
+      })
     } catch (error) {
       console.log(error)
     }
@@ -106,6 +118,8 @@ export default function Home() {
 
   const save = async () => {
     try {
+      await label(labels.id, labels, '15m')
+      clear()
       Swal.fire({
         icon: 'success',
         title: 'สำเร็จ',
@@ -116,21 +130,8 @@ export default function Home() {
     }
   }
 
-  const clear = async () => {
-    try {
-      setLabels({
-        label1: '',
-        label2: '',
-        label3: ''
-      })
-    } catch (error) {
-      console.log(error)
-    }
-  }
-
   useEffect(() => {
     console.log(__APP_VERSION__)
-    
   }, [])
   
   return (
@@ -153,21 +154,24 @@ export default function Home() {
                 </Grid>
                 <Grid item xs={12} md={2}>
                   <Box sx={{height: 100, display: 'flex', alignItems: 'center'}}>
-                    <BtnSearch onClick={search}></BtnSearch>
+                    <BtnSearch onClick={search} loading={loading}></BtnSearch>
                   </Box>
                 </Grid>
                 <Grid item xs={12} md={8}>
-                  <Box sx={{ width: '100%', minHeight: 350,  backgroundColor: 'white', borderRadius: 2}}>
-                    <Chart options={options} series={series} type="candlestick" height={350}></Chart>
+                  <Box sx={{ width: '100%', minHeight: 450,  backgroundColor: 'white', borderRadius: 2}}>
+                    <Chart options={options} series={series} type="candlestick"></Chart>
                   </Box>
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <Stack spacing={2}>
-                    <SelectLabel value={labels.label1} label='Label 1' name='label1' onChange={handleLabelsChange}></SelectLabel>
-                    <SelectLabel value={labels.label2} label='Label 2' name='label2' onChange={handleLabelsChange}></SelectLabel>
-                    <SelectLabel value={labels.label3} label='Label 3' name='label3' onChange={handleLabelsChange}></SelectLabel>
+                    <Stack spacing={2} direction='row'>
+                      <Typography variant="h5" color="white">Selected ID : {labels.id}</Typography>
+                    </Stack>
+                    <SelectLabel value={labels.label1} label='Label 1' name='label1' onChange={handleLabelsChange} disabled={(labels.id === 0)}></SelectLabel>
+                    <SelectLabel value={labels.label2} label='Label 2' name='label2' onChange={handleLabelsChange} disabled={(labels.id === 0)}></SelectLabel>
+                    <SelectLabel value={labels.label3} label='Label 3' name='label3' onChange={handleLabelsChange} disabled={(labels.id === 0)}></SelectLabel>
                     <Stack spacing={2} direction='row-reverse'>
-                      <BtnSave onClick={save}></BtnSave>
+                      <BtnSave onClick={save} disabled={(labels.id === 0)}></BtnSave>
                       <BtnClear onClick={clear}></BtnClear>
                     </Stack>
                   </Stack>
